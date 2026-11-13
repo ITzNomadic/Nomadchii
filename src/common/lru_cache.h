@@ -40,7 +40,13 @@ public:
     }
 
     void Touch(size_t id, TickType tick) {
+        if (id >= item_pool.size()) {
+            return;
+        }
         auto& item = item_pool[id];
+        if (item.prev == nullptr && &item != first_item) {
+            return;
+        }
         if (item.tick >= tick) {
             return;
         }

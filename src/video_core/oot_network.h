@@ -24,6 +24,8 @@ constexpr u64 ProgramId = 0x0400486024DEC000ULL;
 
 // Native program keys of the network's compute passes.
 constexpr u64 PrepassProgramKey = 0x8475d671e6967428ULL;
+// Heavy unused compute dispatch between the prepass and network when the network is bypassed.
+constexpr u64 MidDispatchProgramKey = 0xd9ee412f00ce399aULL;
 constexpr u64 NetworkProgramKey = 0x42593194bb0b2b32ULL;
 constexpr u64 OutputProgramKey = 0xda6df3e54c716df2ULL;
 
@@ -46,6 +48,7 @@ struct BypassState {
     /// Render target 0 of the latest tonemap draw (address 0 until one is seen), under mutex.
     Tegra::Engines::Maxwell3D::Regs::RenderTargetConfig tonemapped{};
     std::atomic<bool> output_replaced{}; ///< the latest output pass was replaced
+    std::atomic<bool> prepass_skipped{}; ///< PrepassProgramKey skipped in the current chain
 };
 
 inline bool BypassEnabled(u64 program_id) {

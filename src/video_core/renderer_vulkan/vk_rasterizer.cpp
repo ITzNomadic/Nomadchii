@@ -1573,6 +1573,7 @@ void RasterizerVulkan::TrackOotTonemappedImage(const GraphicsPipeline& pipeline)
                  target.width, target.height);
     }
     oot_network_bypass.tonemapped = target;
+    oot_network_bypass.prepass_skipped.store(false, std::memory_order_relaxed);
 }
 
 void RasterizerVulkan::TraceDrawFailure(std::string_view reason) {

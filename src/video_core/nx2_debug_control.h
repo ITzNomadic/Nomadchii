@@ -359,7 +359,7 @@ inline std::atomic<int> g_idle_pause{-1};
 /// prove 2 shows 0 differ first (under EXP19=2 without EXP50, blend writes without
 /// Dirty::Blending already leave the clean lookup's attachments stale, and verify reports that
 /// too), then compare the lookup zone with profile_toggle (EXP52 0 vs 1).
-inline constexpr int ExperimentCount = 64;
+inline constexpr int ExperimentCount = 68;
 inline std::atomic<int> g_experiments[ExperimentCount]{};
 
 inline void LoadExperiments() {
@@ -415,11 +415,11 @@ inline void LoadExperiments() {
         // Castle Town live toggle 41.3 -> 43.8 fps, clear zone 54.7 -> 36.3 ms/s; screenshots
         // off/on identical.
         g_experiments[56].store(1, std::memory_order_relaxed);
+        // EXP57 = 1: allow async GC cadence without blocking on extra finish syncs every heavy
+        // texture eviction pass.
+        g_experiments[57].store(1, std::memory_order_relaxed);
         // EXP58 = 1 (2026-11-10): guarded render targets that a newer target of another shape
-        // superseded are deleted once 60 frames old (TextureCache::SweepColdImages). Castle Town
-        // 150 s A/B: device memory 7.8-10.5 -> 5.2-5.7 GB, collector evictions 83-1915 a window
-        // -> 0, worst frames 140-180 -> 30-48 ms, moving median 42.2 -> 46.9 fps; skeleton fight
-        // 5.1-5.5 GB instead of 10.9 with 0 evictions; two owner playtests without glitches.
+        // superseded are deleted once 60 frames old (TextureCache::SweepColdImages).
         g_experiments[58].store(1, std::memory_order_relaxed);
         // EXP61 = 1 (2026-11-10): FlushCommands submits nothing when nothing was recorded since
         // the last submit. Castle Town live toggle: empty submits 4,600 -> 145 a second, 43.0 ->
@@ -433,6 +433,15 @@ inline void LoadExperiments() {
         // EXP39 = 3: publish to a back that waits after 8 words, no snapshot refresh of entries
         // that ran (zortos293/Lichii#805 62db242b34; see the EXP39 notes above). Timing only.
         g_experiments[39].store(3, std::memory_order_relaxed);
+        // EXP64 = 1: skip OoT's unused heavy compute dispatch (0xd9ee412f00ce399a) between the
+        // skipped prepass and replaced output when BypassOotNetwork is active.
+        g_experiments[64].store(1, std::memory_order_relaxed);
+        // EXP65 = 1: check QueryCache's lock-free bloom/count before sending split.Run for
+        // QueryDma::FlushPending (DrainSite::MacroDmaFlush) on FrontDmaRead.
+        g_experiments[65].store(1, std::memory_order_relaxed);
+        // EXP66 = 1: send runs of incrementing 3D register writes to the split front in one call
+        // (FrontWriteRun, ported from ed6632e258; EDEN_NX2_FRONT_BATCH=0 disables).
+        g_experiments[66].store(1, std::memory_order_relaxed);
         for (int n = 0; n < ExperimentCount; ++n) {
             const std::string name = "EDEN_NX2_EXP" + std::to_string(n);
             if (const char* value = std::getenv(name.c_str())) {

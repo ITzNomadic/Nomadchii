@@ -1961,9 +1961,35 @@ void PipelineCache::SaveUsedPipelines() {
     for (const u64 hash : used_and_evicted) {
         next.emplace(hash, u8{0});
     }
+    const u8 max_age = MaxUsedPipelineAge(device);
+    std::vector<std::pair<u64, u8>> expired;
     for (const auto& [hash, age] : used_pipelines) {
-        if (age + 1 < MaxUsedPipelineAge(device)) {
+        if (age + 1 < max_age) {
             next.try_emplace(hash, static_cast<u8>(age + 1));
+        } else {
+            expired.emplace_back(hash, age);
+        }
+    }
+    const size_t keep_ceiling = EvictAbovePipelines();
+    if (next.size() < keep_ceiling && !expired.empty() && max_age > 0) {
+        std::sort(expired.begin(), expired.end(),
+                  [](const auto& a, const auto& b) { return a.second < b.second; });
+        const u8 kept_age = static_cast<u8>(max_age - 1);
+        for (const auto& [hash, age] : expired) {
+            if (next.size() >= keep_ceiling) {
+                break;
+            }
+            next.try_emplace(hash, kept_age);
+        }
+    }
+    if (PreloadAllPipelines() && next.size() < keep_ceiling) {
+        for (const auto& [key, pipeline] : graphics_cache) {
+            if (next.size() >= keep_ceiling) {
+                break;
+            }
+            if (pipeline != nullptr && !pipeline->Failed()) {
+                next.try_emplace(key.Hash(), u8{1});
+            }
         }
     }
     std::ofstream file{used_pipelines_filename, std::ios::binary | std::ios::trunc};
@@ -1974,6 +2000,7 @@ void PipelineCache::SaveUsedPipelines() {
         file.write(reinterpret_cast<const char*>(&hash), sizeof(hash));
         file.write(reinterpret_cast<const char*>(&age), sizeof(age));
     }
+    LOG_INFO(Render_Vulkan, "Saved {} used pipelines (retention ceiling {})", count, keep_ceiling);
 }
 
 namespace {
@@ -5183,9 +5210,9 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreatePrecompiledGraphicsPipeli
         info_ptrs, std::move(emit_stages), library_params);
     // As a translation's (the live environments answered the same questions): kept if evicted.
     VideoCommon::EvictedPointerSlots::Slots mapped_pointers;
-    for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {
-        if (graphics_key.unique_hashes[index] != 0) {
-            mapped_pointers[index] = environments.envs[index].MappedStoragePointerKeys();
+    for (size_t stage_idx = 0; stage_idx < Maxwell::MaxShaderProgram; ++stage_idx) {
+        if (graphics_key.unique_hashes[stage_idx] != 0) {
+            mapped_pointers[stage_idx] = environments.envs[stage_idx].MappedStoragePointerKeys();
         }
     }
     pipeline->SetMappedPointers(std::move(mapped_pointers));

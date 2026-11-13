@@ -540,6 +540,12 @@ private:
     /// Remove joined images from the cache
     [[nodiscard]] ImageId JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DAddr cpu_addr);
 
+    /// Destroys GPU-sentenced images whose fence tick has passed (optionally releasing to EXP42 pool).
+    void DrainFreeGpuSentencedImages(bool allow_pool);
+
+    /// Synchronously frees idle runtime pools/staging buffers and runs aggressive GC on OOM.
+    void ReclaimEmergencyMemory();
+
     [[nodiscard]] ImageId FindDMAImage(const ImageInfo& info, GPUVAddr gpu_addr);
 
     /// Return a blit image pair from the given guest blit parameters

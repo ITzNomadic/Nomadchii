@@ -3221,6 +3221,10 @@ public:
                          u32 argument, bool is_last_call);
     void FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
                               const u32* base_start, u32 amount, u32 methods_pending);
+    /// EXP66 / EDEN_NX2_FRONT_BATCH: `count` incrementing register writes from `method` on
+    /// (all below the macro range), as `count` FrontCallMethod calls would make them.
+    void FrontWriteRun(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
+                       const u32* words, u32 count, bool ends_method);
 
     bool ShouldExecute() const {
         return execute_on;

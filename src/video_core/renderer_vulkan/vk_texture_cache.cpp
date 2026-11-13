@@ -88,6 +88,19 @@ bool MsaaDiscardEnabled() {
     return enabled;
 }
 
+std::optional<u64> ParseOptionalEnvU64(const char* name) {
+    const char* val = std::getenv(name);
+    if (!val || *val == '\0') {
+        return std::nullopt;
+    }
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(val, &end, 10);
+    if (end == val) {
+        return std::nullopt;
+    }
+    return static_cast<u64>(parsed);
+}
+
 [[nodiscard]] constexpr bool NeedsExplicitBorderColorFormat(VkFormat format) {
     switch (format) {
     case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
@@ -2957,7 +2970,9 @@ vk::Image TextureCacheRuntime::TakePooledImage(const ImagePoolKey& key) {
 }
 
 void TextureCacheRuntime::PoolImage(const ImagePoolKey& key, vk::Image image, u64 bytes) {
-    if (!key.valid || !image || bytes > ImagePoolMaxBytes) {
+    const u64 cap = ImagePoolCap();
+    const u64 single_limit = IsLowVramPool() ? LowVramImagePoolMaxBytes : ImagePoolMaxBytes;
+    if (!key.valid || !image || bytes > single_limit || bytes > cap) {
         return;
     }
     image_pool.push_back(PooledImage{
@@ -2968,11 +2983,31 @@ void TextureCacheRuntime::PoolImage(const ImagePoolKey& key, vk::Image image, u6
     });
     image_pool_bytes += bytes;
     ++image_pool_given;
-    TrimImagePool(ImagePoolCap());
+    TrimImagePool(cap);
 }
 
-u64 TextureCacheRuntime::ImagePoolCap() {
-    return VideoCore::Nx2Debug::Experiment(42) >= 2 ? ImagePoolMaxBytesDedicated : ImagePoolMaxBytes;
+bool TextureCacheRuntime::IsLowVramPool() const {
+    return device.GetDeviceLocalMemory() < (u64{10} << 30);
+}
+
+u64 TextureCacheRuntime::ImagePoolCap() const {
+    static const std::optional<u64> env_mib = ParseOptionalEnvU64("EDEN_NX2_IMAGE_POOL_MIB");
+    if (env_mib) {
+        return *env_mib << 20;
+    }
+    const bool dedicated = VideoCore::Nx2Debug::Experiment(42) >= 2;
+    if (IsLowVramPool()) {
+        return dedicated ? LowVramImagePoolMaxBytesDedicated : LowVramImagePoolMaxBytes;
+    }
+    return dedicated ? ImagePoolMaxBytesDedicated : ImagePoolMaxBytes;
+}
+
+u64 TextureCacheRuntime::ImagePoolFrameLimit() const {
+    static const std::optional<u64> env_frames = ParseOptionalEnvU64("EDEN_NX2_IMAGE_POOL_FRAMES");
+    if (env_frames && *env_frames > 0) {
+        return *env_frames;
+    }
+    return IsLowVramPool() ? LowVramImagePoolMaxFrames : ImagePoolMaxFrames;
 }
 
 void TextureCacheRuntime::TrimImagePool(u64 max_bytes) {
@@ -2981,6 +3016,31 @@ void TextureCacheRuntime::TrimImagePool(u64 max_bytes) {
         image_pool.pop_front();
         ++image_pool_evicted;
     }
+}
+
+void TextureCacheRuntime::TrimPooledMemory(bool aggressive) {
+    if (aggressive) {
+        TrimImagePool(0);
+        free_transcodes.clear();
+        std::erase_if(msaa_scratch_images,
+                      [this](const MsaaScratchImage& s) { return scheduler.IsFree(s.tick); });
+    } else {
+        TrimImagePool(u64{128} << 20);
+    }
+}
+
+void TextureCacheRuntime::ReclaimMemory() {
+    TrimImagePool(0);
+    free_transcodes.clear();
+    std::erase_if(msaa_scratch_images,
+                  [this](const MsaaScratchImage& s) { return scheduler.IsFree(s.tick); });
+    std::erase_if(pending_resolve_shadows,
+                  [this](const auto& pending) { return scheduler.IsFree(pending.first); });
+    while (!pending_byte_addressed_shadows.empty() &&
+           scheduler.IsFree(pending_byte_addressed_shadows.front().tick)) {
+        pending_byte_addressed_shadows.pop_front();
+    }
+    staging_buffer_pool.ReleaseIdle();
 }
 
 void TextureCacheRuntime::TickFrame() {
@@ -2998,8 +3058,9 @@ void TextureCacheRuntime::TickFrame() {
         if (pool_switch == 0 || short_of_memory) {
             TrimImagePool(0);
         }
+        const u64 max_frames = ImagePoolFrameLimit();
         while (!image_pool.empty() &&
-               image_pool_frame - image_pool.front().frame > ImagePoolMaxFrames) {
+               image_pool_frame - image_pool.front().frame > max_frames) {
             image_pool_bytes -= image_pool.front().bytes;
             image_pool.pop_front();
             ++image_pool_evicted;

@@ -6,10 +6,13 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <span>
+#include "video_core/nx2_debug_control.h"
 #include "video_core/page_filter.h"
 #include "common/container/unordered_map.h"
 #include <utility>
@@ -91,8 +94,33 @@ public:
     }
 
     /// Whether a report in the region is still listed (pending host results, or written and not
-    /// unregistered yet). Only the cache mutex: callable from the split front.
+    /// unregistered yet). Lock-free via atomic page bloom when clean under EXP65; falls back to
+    /// the cache mutex otherwise. Callable from the split front.
     [[nodiscard]] bool HasCachedReports(VAddr addr, size_t size) {
+        if (size == 0) {
+            return false;
+        }
+        if (VideoCore::Nx2Debug::Experiment(65) != 0) {
+            if (cached_query_count.load(std::memory_order_acquire) == 0) {
+                return false;
+            }
+            const u64 page_begin = addr >> Core::DEVICE_PAGEBITS;
+            const u64 page_end = (addr + size - 1) >> Core::DEVICE_PAGEBITS;
+            bool any_page = page_end < page_begin || (page_end - page_begin) >= PageBloomBits;
+            if (!any_page) {
+                for (u64 page = page_begin; page <= page_end; ++page) {
+                    const size_t h = PageBloomIndex(page);
+                    if ((cached_query_pages[h >> 6].load(std::memory_order_acquire) &
+                         (u64{1} << (h & 63))) != 0) {
+                        any_page = true;
+                        break;
+                    }
+                }
+            }
+            if (!any_page) {
+                return false;
+            }
+        }
         bool result = false;
         IterateCache<false>(addr, size, [&result](QueryLocation) { result = true; });
         return result;
@@ -188,7 +216,11 @@ protected:
                 const auto in_range2 = [&](const std::pair<u32, QueryLocation>& pair) {
                     return in_range(pair.first);
                 };
+                const size_t before = contents.size();
                 erase_if(contents, in_range2);
+                if (const size_t removed = before - contents.size(); removed > 0) {
+                    NoteQueryRemoved(page, static_cast<u32>(removed));
+                }
             }
         }
     }
@@ -204,6 +236,30 @@ protected:
     void FinishReads(DAddr address, size_t size);
     void UnregisterPending();
 
+    static constexpr size_t PageBloomBits = 2048;
+    static constexpr size_t PageBloomWords = PageBloomBits / 64;
+    [[nodiscard]] static constexpr size_t PageBloomIndex(u64 page) noexcept {
+        return static_cast<size_t>((page ^ (page >> 12)) & (PageBloomBits - 1));
+    }
+    void NoteQueryAdded(u64 page) noexcept {
+        const size_t h = PageBloomIndex(page);
+        if (++cached_query_page_counts[h] == 1) {
+            cached_query_pages[h >> 6].fetch_or(u64{1} << (h & 63), std::memory_order_release);
+        }
+        cached_query_count.fetch_add(1, std::memory_order_release);
+    }
+    void NoteQueryRemoved(u64 page, u32 count = 1) noexcept {
+        cached_query_count.fetch_sub(count, std::memory_order_release);
+        const size_t h = PageBloomIndex(page);
+        cached_query_page_counts[h] -= count;
+        if (cached_query_page_counts[h] == 0) {
+            cached_query_pages[h >> 6].fetch_and(~(u64{1} << (h & 63)), std::memory_order_release);
+        }
+    }
+
+    std::atomic<u32> cached_query_count{};
+    std::array<std::atomic<u64>, PageBloomWords> cached_query_pages{};
+    std::array<u32, PageBloomBits> cached_query_page_counts{};
     ::Common::unordered_map<u64, ::Common::unordered_map<u32, QueryLocation>> cached_queries;
     std::mutex cache_mutex;
 

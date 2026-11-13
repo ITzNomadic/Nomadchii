@@ -156,6 +156,12 @@ public:
         return image_pool_bytes;
     }
 
+    /// Trims pooled runtime caches when the texture cache crosses memory thresholds.
+    void TrimPooledMemory(bool aggressive);
+
+    /// Synchronously frees all idle pooled/scratch images and idle staging buffers on OOM.
+    void ReclaimMemory();
+
     void LogMemoryStatistics() const;
 
     /// EDEN_NX2_MEM_TRACE: staging buffers, then the process, DXGI and VMA (LogMemoryTrace).
@@ -390,8 +396,9 @@ public:
     };
     std::deque<PendingByteAddressedShadow> pending_byte_addressed_shadows;
 
-    /// EXP42's pool, oldest first. Capped at ImagePoolMaxBytes and ImagePoolMaxFrames of age,
-    /// emptied when the switch goes off or images stop fitting in device memory.
+    /// EXP42's pool, oldest first. Capped adaptively by device-local VRAM (8 GB GPUs get tighter
+    /// bounds so stale pool entries do not crowd device memory; 10+ GB GPUs keep full bounds) or
+    /// overridden via EDEN_NX2_IMAGE_POOL_MIB / EDEN_NX2_IMAGE_POOL_FRAMES.
     struct PooledImage {
         ImagePoolKey key;
         vk::Image image;
@@ -399,11 +406,14 @@ public:
         u64 frame;
     };
     static constexpr u64 ImagePoolMaxBytes = u64{512} << 20;
-    /// EXP42=2 pools the big dedicated render targets too (a 2560x1440 one is ~30 MiB): 512 MiB
-    /// held ~17 of them and evicted 1,150-1,400 images a 600 frames in Castle Town (2026-11-10).
     static constexpr u64 ImagePoolMaxBytesDedicated = u64{1536} << 20;
-    [[nodiscard]] static u64 ImagePoolCap();
+    static constexpr u64 LowVramImagePoolMaxBytes = u64{256} << 20;
+    static constexpr u64 LowVramImagePoolMaxBytesDedicated = u64{768} << 20;
+    [[nodiscard]] bool IsLowVramPool() const;
+    [[nodiscard]] u64 ImagePoolCap() const;
+    [[nodiscard]] u64 ImagePoolFrameLimit() const;
     static constexpr u64 ImagePoolMaxFrames = 180;
+    static constexpr u64 LowVramImagePoolMaxFrames = 90;
     std::deque<PooledImage> image_pool;
     u64 image_pool_bytes{};
     u64 image_pool_frame{};

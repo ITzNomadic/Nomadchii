@@ -1656,13 +1656,13 @@ std::optional<Texture::TICEntry> KeplerCompute::ConstBuffer0Image(u32 offset) co
     return GetTICEntry(tic_index);
 }
 
-bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
+bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key, u64 shader_hash) {
     using namespace VideoCommon::OotNetwork;
     if (!BypassEnabled(program_id)) {
         return false;
     }
-    auto* const state = rasterizer->OotNetworkBypass();
-    if (!state) {
+    auto* const bypass_state = rasterizer->OotNetworkBypass();
+    if (!bypass_state) {
         return false;
     }
     // The tonemap pass draws before the network every frame; until it has been seen (menus, the
@@ -1670,18 +1670,50 @@ bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
     // pass is being replaced, so a failed replacement brings the whole network back next frame.
     Maxwell3D::Regs::RenderTargetConfig tonemapped;
     {
-        std::scoped_lock lock{state->mutex};
-        tonemapped = state->tonemapped;
+        std::scoped_lock lock{bypass_state->mutex};
+        tonemapped = bypass_state->tonemapped;
     }
     if (tonemapped.Address() == 0) {
         return false;
     }
-    if (native_key == PrepassProgramKey || native_key == NetworkProgramKey) {
-        return state->output_replaced.load(std::memory_order_relaxed);
+    if (native_key == PrepassProgramKey) {
+        const bool skip = bypass_state->output_replaced.load(std::memory_order_relaxed);
+        bypass_state->prepass_skipped.store(skip, std::memory_order_relaxed);
+        return skip;
+    }
+    if (native_key == MidDispatchProgramKey || shader_hash == MidDispatchProgramKey) {
+        const bool exp64 = VideoCore::Nx2Debug::Experiment(64) != 0;
+        const bool replaced = bypass_state->output_replaced.load(std::memory_order_relaxed);
+        const bool prepass = bypass_state->prepass_skipped.load(std::memory_order_relaxed);
+        if (exp64 && replaced && prepass) {
+            static bool logged_mid_skip = false;
+            if (!std::exchange(logged_mid_skip, true)) {
+                LOG_INFO(HW_GPU,
+                         "Ocarina of Time: bypassing unused mid-network dispatch "
+                         "native_key={:#018x} shader_hash={:#018x} grid={}x{}x{} block={}x{}x{}",
+                         native_key, shader_hash, launch_description.grid_dim_x,
+                         launch_description.grid_dim_y, launch_description.grid_dim_z,
+                         launch_description.block_dim_x, launch_description.block_dim_y,
+                         launch_description.block_dim_z);
+            }
+            return true;
+        }
+        static bool logged_mid_noskip = false;
+        if (!std::exchange(logged_mid_noskip, true)) {
+            LOG_INFO(HW_GPU,
+                     "Ocarina of Time: mid-network dispatch NOT bypassed native_key={:#018x} "
+                     "shader_hash={:#018x} (exp64={}, output_replaced={}, prepass_skipped={})",
+                     native_key, shader_hash, exp64, replaced, prepass);
+        }
+        return false;
+    }
+    if (native_key == NetworkProgramKey) {
+        return bypass_state->output_replaced.load(std::memory_order_relaxed);
     }
     if (native_key != OutputProgramKey) {
         return false;
     }
+    bypass_state->prepass_skipped.store(false, std::memory_order_relaxed);
     // The copy needs the tonemapped image to be a B10G11R11 block-linear image of the output's size.
     const auto output = ConstBuffer0Image(OutputImageHandleOffset);
     if (!output || output->format != Texture::TextureFormat::B10G11R11 || output->Address() == 0 ||
@@ -1689,7 +1721,7 @@ bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
         tonemapped.format != Tegra::RenderTargetFormat::B10G11R11_FLOAT ||
         tonemapped.tile_mode.is_pitch_linear || tonemapped.width != output->Width() ||
         tonemapped.height != output->Height()) {
-        state->output_replaced.store(false, std::memory_order_relaxed);
+        bypass_state->output_replaced.store(false, std::memory_order_relaxed);
         static bool warned = false;
         if (!std::exchange(warned, true)) {
             LOG_WARNING(HW_GPU,
@@ -1734,7 +1766,7 @@ bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
         .src_y1 = height,
     };
     const bool copied = rasterizer->AccelerateSurfaceCopy(source, destination, config);
-    state->output_replaced.store(copied, std::memory_order_relaxed);
+    bypass_state->output_replaced.store(copied, std::memory_order_relaxed);
     static bool logged = false;
     if (!std::exchange(logged, true)) {
         LOG_INFO(HW_GPU,

@@ -157,14 +157,15 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         high_priority_mode = out_of_memory || total_used_memory >= expected_memory;
         aggressive_mode =
             allow_aggressive && (out_of_memory || total_used_memory >= critical_memory);
-        ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
+        ticks_to_destroy =
+            out_of_memory ? 4ULL : (aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL);
         // EDEN_NX2_TC_MIN_AGE=<frames>: never evict images used more recently (thrash tests).
         static const u64 min_age = [] {
             const char* value = std::getenv("EDEN_NX2_TC_MIN_AGE");
             return value != nullptr ? std::strtoull(value, nullptr, 10) : 0ULL;
         }();
         ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
-        num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
+        num_iterations = out_of_memory ? 80 : (aggressive_mode ? 40 : (high_priority_mode ? 20 : 10));
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
                           &evict_old_costly, out_of_memory](ImageId image_id) {
@@ -439,10 +440,16 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
     if constexpr (requires { runtime.GetDeviceMemoryBudget(); }) {
         const u64 budget = runtime.GetDeviceMemoryBudget();
         max_critical = (std::max)(max_critical, budget / 8 * 5);
-        // Cards with 10 GiB or more of budget: 5/8 left ~7.3 GiB on a 12 GB RX 6700 XT, under what
-        // Ocarina's Kokiri Forest keeps alive, so every aggressive pass evicted its CostlyLoad ASTC
-        // textures (a 6144x6144 5x5 one, 31 MiB) and the game re-created them ~128 frames later:
-        // a 24 ms texture stall every ~3 s. Keep 2.5 GiB of the budget for everything else instead.
+        // 8 GiB cards (~6.5-7.5 GiB DXGI budget): 5/8 leaves ~4.4 GiB, which evicts Ocarina's
+        // working set in Kokiri Forest. Allow up to 5.75 GiB (budget - margin still caps near ~5.65 GiB).
+        if (budget >= 6_GiB && budget < 10_GiB) {
+            max_critical = (std::max)(max_critical, u64{5888_MiB});
+        }
+        // Cards with 10 GiB or more of budget: 5/8 left ~7.3 GiB on a 12 GB RX 6700 XT, under
+        // what Ocarina's Kokiri Forest keeps alive, so every aggressive pass evicted its
+        // CostlyLoad ASTC textures (a 6144x6144 5x5 one, 31 MiB) and the game re-created them
+        // ~128 frames later: a 24 ms texture stall every ~3 s. Keep 2.5 GiB of the budget for
+        // everything else instead.
         if (budget >= 10_GiB) {
             max_critical = (std::max)(max_critical, budget - 2560_MiB);
         }
@@ -590,32 +597,22 @@ void TextureCache<P>::TickFrame() {
             }
         }
     }
-    if constexpr (requires { runtime.CurrentTick(); }) {
-        while (!gpu_sentenced_images.empty() &&
-               runtime.IsFree(gpu_sentenced_images.front().tick)) {
-            // EXP42: the GPU is done with it, so its VkImage may go to the runtime's pool for
-            // the next image of its shape (fable_answer_12 2B).
-            if constexpr (requires(Image& image) { image.ReleaseToPool(); }) {
-                gpu_sentenced_images.front().image.ReleaseToPool();
-            }
-            gpu_sentenced_bytes -= gpu_sentenced_images.front().bytes;
-            gpu_sentenced_images.pop_front();
-        }
-    }
+    DrainFreeGpuSentencedImages(true);
     // If we can obtain the memory info, use it instead of the estimate.
     if (runtime.CanReportMemoryUsage()) {
         total_used_memory = runtime.GetDeviceMemoryUsage();
         // Images the collector deleted keep their memory for TICKS_TO_DESTROY frames: counting
         // it kept the collector in aggressive mode, deleting 40+ images a frame for frames after
         // it had freed enough (title 1: frames over 100 ms for seconds at a time).
+        u64 pending_free = gpu_sentenced_bytes;
         for (const u64 bytes : sentenced_image_bytes) {
-            total_used_memory -= (std::min)(total_used_memory, bytes);
+            pending_free += bytes;
         }
-        total_used_memory -= (std::min)(total_used_memory, gpu_sentenced_bytes);
         // EXP42's pooled images are deleted images too: the pool caps and ages them itself.
         if constexpr (requires { runtime.PooledImageBytes(); }) {
-            total_used_memory -= (std::min)(total_used_memory, runtime.PooledImageBytes());
+            pending_free += runtime.PooledImageBytes();
         }
+        total_used_memory -= (std::min)(total_used_memory, pending_free);
     }
     // EDEN_NX2_MEM_TRACE=1 (from zortos293/Lichii#951): every 2 s, what the cache holds next to
     // what the process and the driver report (memory climbs).
@@ -742,6 +739,11 @@ void TextureCache<P>::TickFrame() {
         const u32 failed = runtime.FailedImages();
         out_of_memory = failed != seen_failed_images;
         seen_failed_images = failed;
+    }
+    if (out_of_memory) {
+        if constexpr (requires { runtime.TrimPooledMemory(bool{}); }) {
+            runtime.TrimPooledMemory(true);
+        }
     }
     if (out_of_memory || total_used_memory > minimum_memory) {
         RunGarbageCollector(out_of_memory);
@@ -1189,6 +1191,9 @@ typename P::ImageView& TextureCache<P>::GetImageView(u32 index) noexcept {
 
 template <class P>
 void TextureCache<P>::MarkModification(ImageId id) noexcept {
+    if (!id || id == NULL_IMAGE_ID || id == CORRUPT_ID) {
+        return;
+    }
     MarkModification(slot_images[id]);
 }
 
@@ -1449,7 +1454,8 @@ void TextureCache<P>::TouchTextureMemoView(ImageViewId view) noexcept {
         return;
     }
     const ImageViewBase& image_view = slot_image_views[view];
-    if (image_view.IsBuffer()) {
+    if (image_view.IsBuffer() || image_view.image_id == NULL_IMAGE_ID ||
+        image_view.image_id == CORRUPT_ID) {
         return;
     }
     ImageBase& image = slot_images[image_view.image_id];
@@ -3578,6 +3584,35 @@ std::optional<DAddr> TextureCache<P>::ImageCpuAddress(GPUVAddr gpu_addr, size_t 
 }
 
 template <class P>
+void TextureCache<P>::DrainFreeGpuSentencedImages(bool allow_pool) {
+    if constexpr (requires { runtime.CurrentTick(); }) {
+        while (!gpu_sentenced_images.empty() &&
+               runtime.IsFree(gpu_sentenced_images.front().tick)) {
+            if (allow_pool) {
+                // EXP42: the GPU is done with it, so its VkImage may go to the runtime's pool for
+                // the next image of its shape (fable_answer_12 2B).
+                if constexpr (requires(Image& image) { image.ReleaseToPool(); }) {
+                    gpu_sentenced_images.front().image.ReleaseToPool();
+                }
+            }
+            gpu_sentenced_bytes -= gpu_sentenced_images.front().bytes;
+            gpu_sentenced_images.pop_front();
+        }
+    }
+}
+
+template <class P>
+void TextureCache<P>::ReclaimEmergencyMemory() {
+    DrainFreeGpuSentencedImages(false);
+    if constexpr (requires { runtime.ReclaimMemory(); }) {
+        runtime.ReclaimMemory();
+    }
+    SweepColdImages();
+    RunGarbageCollector(true);
+    DrainFreeGpuSentencedImages(false);
+}
+
+template <class P>
 ImageId TextureCache<P>::InsertImage(const ImageInfo& info, GPUVAddr gpu_addr,
                                      RelaxedOptions options) {
     std::optional<DAddr> cpu_addr = ImageCpuAddress(gpu_addr, CalculateGuestSizeInBytes(info));
@@ -3595,7 +3630,13 @@ ImageId TextureCache<P>::InsertImage(const ImageInfo& info, GPUVAddr gpu_addr,
                  gpu_addr, info.size.width, info.size.height, info.size.depth, info.resources.levels,
                  static_cast<u32>(info.format), info.block.width, info.block.height, info.block.depth);
     }
-    const ImageId image_id = JoinImages(storage_info, gpu_addr, *cpu_addr);
+    ImageId image_id = JoinImages(storage_info, gpu_addr, *cpu_addr);
+    if (!image_id) {
+        // Retry once after collecting old images and flushing runtime pools outside JoinImages's
+        // overlap vectors.
+        ReclaimEmergencyMemory();
+        image_id = JoinImages(storage_info, gpu_addr, *cpu_addr);
+    }
     if (!image_id) {
         return image_id;
     }
@@ -3911,7 +3952,17 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         }
     }
     const auto create_start = std::chrono::steady_clock::now();
-    const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    if constexpr (requires(const Image& image) { image.OutOfMemory(); }) {
+        if (slot_images[new_image_id].OutOfMemory()) {
+            slot_images.erase(new_image_id);
+            DrainFreeGpuSentencedImages(false);
+            if constexpr (requires { runtime.ReclaimMemory(); }) {
+                runtime.ReclaimMemory();
+            }
+            new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+        }
+    }
     rt_stats.create_ns += NsSince(create_start);
     NoteMadeShape(new_info);
     if constexpr (requires(const Image& image) { image.FromPool(); }) {
@@ -4328,6 +4379,9 @@ ImageId TextureCache<P>::FindDMAImage(const ImageInfo& info, GPUVAddr gpu_addr) 
 template <class P>
 std::pair<u32, u32> TextureCache<P>::PrepareDmaImage(ImageId dst_id, GPUVAddr base_addr,
                                                      bool mark_as_modified) {
+    if (!dst_id || dst_id == NULL_IMAGE_ID || dst_id == CORRUPT_ID) {
+        return {};
+    }
     // As in BlitImage: land a parked deferred clear before the DMA write.
     runtime.FlushDeferredClear();
     const auto& image = slot_images[dst_id];
@@ -4672,6 +4726,7 @@ void TextureCache<P>::UnregisterImage(ImageId image_id) {
     image.flags &= ~ImageFlagBits::Registered;
     image.flags &= ~ImageFlagBits::BadOverlap;
     lru_cache.Free(image.lru_index);
+    image.lru_index = (std::numeric_limits<size_t>::max)();
     const auto& clear_page_table =
         [image_id](u64 page, ::Common::unordered_map<u64, std::vector<ImageId>, Common::IdentityHash<u64>>& selected_page_table) {
             const auto page_it = selected_page_table.find(page);
@@ -5431,6 +5486,9 @@ void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
 
 template <class P>
 void TextureCache<P>::PrepareImage(ImageId image_id, bool is_modification, bool invalidate) {
+    if (!image_id || image_id == NULL_IMAGE_ID || image_id == CORRUPT_ID) {
+        return;
+    }
     Image& image = slot_images[image_id];
     CheckCrossFrameUse(image, is_modification, invalidate);
     if (!tombstone_born.empty()) {

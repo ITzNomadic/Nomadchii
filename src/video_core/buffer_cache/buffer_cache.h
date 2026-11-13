@@ -179,13 +179,15 @@ void BufferCache<P>::TickFrame() {
     }
     if (gpu_memory != nullptr && gpu_memory->UsesNativeTiling()) {
         // Switch 2 titles fill the device with textures (their collector watches the budget);
-        // title 1's buffers were ~200 MiB of an 8 GB GPU's ~6.8 GB in use, yet this collector
-        // ran aggressively every frame on the device-wide figure, evicting up to 64 buffers (and
-        // downloading the GPU-written ones, ~5% of the GPU thread) that were recreated later.
-        // Collect when the buffers themselves are large. At 1 GiB it held geometry of scenes
-        // long gone: title 1's title screen grew to ~0.9 GB of buffers in ten minutes.
-        if (buffer_bytes >= 512_MiB) {
-            RunGarbageCollector(buffer_bytes >= 1_GiB);
+        // keep non-aggressive buffer eviction (no GPU-written download stalls) at 512 MiB under
+        // normal memory headroom, and only tighten thresholds if total VRAM reaches critical.
+        const u64 device_local = runtime.GetDeviceLocalMemory();
+        const bool small_vram = device_local != 0 && device_local <= 9_GiB;
+        const bool vram_critical = small_vram && total_used_memory >= critical_memory;
+        const u64 min_trigger = vram_critical ? 256_MiB : 512_MiB;
+        const u64 critical_trigger = vram_critical ? 640_MiB : 1_GiB;
+        if (buffer_bytes >= min_trigger) {
+            RunGarbageCollector(buffer_bytes >= critical_trigger || vram_critical);
         }
     } else if (total_used_memory >= minimum_memory) {
         RunGarbageCollector(total_used_memory >= critical_memory);

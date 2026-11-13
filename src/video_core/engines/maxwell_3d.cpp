@@ -1636,6 +1636,14 @@ void Maxwell3D::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit& spl
     FrontWrite(split, fs, method, argument, is_last_call, false);
 }
 
+void Maxwell3D::FrontWriteRun(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
+                              const u32* words, u32 count, bool ends_method) {
+    auto& fs = Front(system, split);
+    for (u32 i = 0; i < count; ++i) {
+        FrontWrite(split, fs, method + i, words[i], ends_method && i + 1 == count, false);
+    }
+}
+
 void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split,
                                      u32 method, const u32* base_start, u32 amount,
                                      u32 methods_pending) {
@@ -2217,11 +2225,14 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
                                          9);
     // Waits until pending reports in the range have landed (#215), as the drained path below.
     const auto flush_queries = [&](GPUVAddr begin, size_t bytes) {
-        split.Run(
-            [this, begin, bytes] {
-                VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, begin, bytes);
-            },
-            VideoCommon::DrainSite::MacroDmaFlush);
+        if (VideoCore::Nx2Debug::Experiment(65) == 0 ||
+            VideoCommon::QueryDma::HasCachedReports(memory_manager, *rasterizer, begin, bytes)) {
+            split.Run(
+                [this, begin, bytes] {
+                    VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, begin, bytes);
+                },
+                VideoCommon::DrainSite::MacroDmaFlush);
+        }
     };
     if (snapshot_mode >= 9 && !full_drain && !Tegra::Nx2CmdPageDiag::g_enabled &&
         method == 0x158 && words != 0) {
@@ -2374,12 +2385,12 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
                             return dispatches.unbounded[static_cast<size_t>(reason)];
                         };
                         u64 dispatch_drains = 0;
-                        for (const u64 count : dispatch_checks) {
-                            dispatch_drains += count;
+                        for (const u64 entry_count : dispatch_checks) {
+                            dispatch_drains += entry_count;
                         }
                         u64 dispatches_unbounded = 0;
-                        for (const u64 count : dispatches.unbounded) {
-                            dispatches_unbounded += count;
+                        for (const u64 unbounded_count : dispatches.unbounded) {
+                            dispatches_unbounded += unbounded_count;
                         }
                         using Release = VideoCommon::GpuSplit::ReleaseNote;
                         const auto& releases = split.ReleaseNotes();
@@ -2450,11 +2461,15 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
         flush_if_dirty();
     }
     // Write out the reports held in the query cache, or the read returns stale occlusion counts.
-    split.Run(
-        [this, source, read_bytes] {
-            VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, source, read_bytes);
-        },
-        VideoCommon::DrainSite::MacroDmaFlush);
+    if (VideoCore::Nx2Debug::Experiment(65) == 0 ||
+        VideoCommon::QueryDma::HasCachedReports(memory_manager, *rasterizer, source, read_bytes)) {
+        split.Run(
+            [this, source, read_bytes] {
+                VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, source,
+                                                    read_bytes);
+            },
+            VideoCommon::DrainSite::MacroDmaFlush);
+    }
     u32 changed{};
     for (u32 i = 0; i < words; ++i) {
         const u32 word = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
@@ -2822,22 +2837,22 @@ void Maxwell3D::RunDrawBatch(Core::System& system, const u64* writes, u32 count,
     if (repeats <= 1) {
         return;
     }
-    auto& state = draw_manager.draw_state;
+    auto& batch_state = draw_manager.draw_state;
     if ((VideoCore::Nx2Debug::Experiment(22) & 8) == 0) [[likely]] {
         // The repeats write what the registers and shadow RAM hold, raise flags that are raised,
         // set draw_indexed again and draw nothing (IsBatchMiddle): each counts an instance in
         // its draw.begin (DrawManager::DrawBegin, Subsequent).
-        state.instance_count += repeats - 1;
+        batch_state.instance_count += repeats - 1;
         return;
     }
     // EXP22 bit 8: the repeats as their single entries, against that.
     constexpr u32 MaxWrites = FrontState::MaxBatchWrites;
     const u32 checked = (std::min)(count, MaxWrites);
-    const u32 expected = state.instance_count + (repeats - 1);
+    const u32 expected = batch_state.instance_count + (repeats - 1);
     const DirtyState::Flags flags = dirty.flags;
-    const auto mode = state.draw_mode;
-    const bool indexed = state.draw_indexed;
-    const auto topology = state.topology;
+    const auto mode = batch_state.draw_mode;
+    const bool indexed = batch_state.draw_indexed;
+    const auto topology = batch_state.topology;
     std::array<u32, MaxWrites> group_regs{};
     std::array<u32, MaxWrites> group_shadow{};
     for (u32 i = 0; i < checked; ++i) {
@@ -2848,9 +2863,9 @@ void Maxwell3D::RunDrawBatch(Core::System& system, const u64* writes, u32 count,
     for (u32 repeat = 1; repeat < repeats; ++repeat) {
         run_group();
     }
-    bool differs = state.instance_count != expected || dirty.flags != flags ||
-                   state.draw_mode != mode || state.draw_indexed != indexed ||
-                   state.topology != topology;
+    bool differs = batch_state.instance_count != expected || dirty.flags != flags ||
+                   batch_state.draw_mode != mode || batch_state.draw_indexed != indexed ||
+                   batch_state.topology != topology;
     for (u32 i = 0; i < checked; ++i) {
         const u32 method = static_cast<u32>(writes[i]) & 0xffff;
         differs |= regs.reg_array[method] != group_regs[i] ||
@@ -2860,7 +2875,7 @@ void Maxwell3D::RunDrawBatch(Core::System& system, const u64* writes, u32 count,
     if (differs && g_exp22_checks.batch_differences++ < 32) {
         LOG_ERROR(HW_GPU,
                   "EXP22 check: draw batch of {} writes x {} differs: {} instances, expected {}",
-                  count, repeats, state.instance_count, expected);
+                  count, repeats, batch_state.instance_count, expected);
     }
     ReportExp22Checks();
 }
