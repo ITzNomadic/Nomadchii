@@ -1,0 +1,33 @@
+# Nomadchii Preset: Ocarina of Time (Switch 2) Performance Profile
+# Copy the lines you want into %APPDATA%\nomadchii\nx2_switches.txt and restart Nomadchii.
+
+# Keep a local VkPipelineCache file on AMD proprietary drivers so compiled shaders persist across restarts.
+# Safe to remove on NVIDIA (uses driver shader cache) or if testing fresh shader builds.
+EDEN_NX2_AMD_APP_CACHE=1
+
+# Skip draws whose pipelines are not compiled yet instead of blocking on persistent targets.
+EDEN_NX2_ASYNC_DISCARD=1
+
+# Selective wait & query report paths
+EDEN_NX2_EXP12=1
+EDEN_NX2_EXP30=1
+
+# CPU & GPU overhead reductions verified on Ocarina of Time (Switch 2)
+EDEN_NX2_EXP17=1
+EDEN_NX2_EXP22=7
+EDEN_NX2_EXP24=1
+EDEN_NX2_OOT_POLL_BACKOFF=1
+EDEN_NX2_EXP25=500
+EDEN_NX2_EXP26=7
+EDEN_NX2_EXP28=3
+EDEN_NX2_EXP31=1
+EDEN_NX2_EXP32=1
+EDEN_NX2_EXP40=3
+EDEN_NX2_EXP48=1
+EDEN_NX2_EXP50=1
+EDEN_NX2_EXP52=1
+EDEN_NX2_EXP53=1
+EDEN_NX2_EXP59=4
+EDEN_NX2_EXP62=1
+EDEN_NX2_EXP63=1
+EDEN_NX2_PERF_ON=clean_words,index_rebind,async_pipelines,bounds,submit_budget,fragment_barrier

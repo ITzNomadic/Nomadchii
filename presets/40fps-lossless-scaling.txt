@@ -1,0 +1,11 @@
+# Nomadchii Preset: 40 FPS Lock + External Frame Generation (e.g. Lossless Scaling X2 -> 80 FPS)
+# Copy into %APPDATA%\nomadchii\nx2_switches.txt (or your nx2_switches.txt beside nomadchii.exe).
+#
+# Pair this with:
+#   - Emulator Speed Limit = 67% (~40 FPS lock)
+#   - Lossless Scaling: LSFG 3.0 / Mode X2
+#
+# IMPORTANT: Remove or comment out EDEN_NX2_VSYNC_HZ if playing unlocked or at native 60 FPS,
+# as a 1000 Hz anchor alters vsync/frame-pacing timing when not paired with a ~40 FPS target.
+
+EDEN_NX2_VSYNC_HZ=1000

@@ -269,11 +269,13 @@ add_executable(yuzu
 
 set_target_properties(yuzu PROPERTIES OUTPUT_NAME "nomadchii")
 
-# Shipped next to the executable: the NX2 switches a GUI launch cannot set another way. Read at
+# Shipped next to the executable: the NX2 switches and optional hardware/game presets. Read at
 # startup (LoadNx2Switches in main.cpp); a user copy in %APPDATA%\nomadchii overrides it.
 add_custom_command(TARGET yuzu POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PROJECT_SOURCE_DIR}/dist/nx2_switches.txt" "$<TARGET_FILE_DIR:yuzu>/nx2_switches.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/presets" "$<TARGET_FILE_DIR:yuzu>/presets"
     VERBATIM)
 
 if (YUZU_CRASH_DUMPS)
