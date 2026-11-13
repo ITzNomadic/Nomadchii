@@ -7,6 +7,16 @@ Nomadchii is an experimental open-source Nintendo Switch / NX2 emulator fork foc
 
 ---
 
+## Download & Quick Start (Windows x64)
+
+1. Download **`Nomadchii-v1.0.0-Windows-x64.zip`** from the [**Releases**](https://github.com/ITzNomadic/Nomadchii/releases) page (do not download GitHub's "Source code" archives unless compiling yourself).
+2. Extract the archive into any writable folder and run `nomadchii.exe`.
+   - If Windows reports a missing `VCRUNTIME140.dll` / `MSVCP140.dll`, install the latest [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vc14/vc_redist.x64.exe).
+3. Load your legally dumped keys (`prod.keys` / `title.keys`) and games. Your settings and saves live in `%APPDATA%\nomadchii`, separate from Eden/Lichii/Fritchii.
+4. *(Optional)* Copy tuning lines from [`presets/`](presets/README.md) into `%APPDATA%\nomadchii\nx2_switches.txt` if you want 8 GB VRAM caps, 40 FPS + Lossless Scaling timing, or *Ocarina of Time* tweaks.
+
+---
+
 ## Lineage & GPL Modification Notice
 
 In accordance with **Section 5(a) of the GNU General Public License v3.0 (GPL-3.0-or-later)**:
