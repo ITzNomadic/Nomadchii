@@ -23,7 +23,7 @@ class MainWindow;
 // keeps the upstream UI and merges from Lichii stay clean. Shared files only call in here.
 namespace FritchiiUi {
 
-/// Fritchii builds (g_build_name "Fritchii"). FRITCHII_CLASSIC_UI=1 shows the upstream UI.
+/// Nomadchii builds (g_build_name "Nomadchii"). NOMADCHII_CLASSIC_UI=1 shows the classic UI.
 [[nodiscard]] bool Enabled();
 
 /// Fusion style, the Graphite palette, Inter and the stylesheet. Does nothing (and returns false)
@@ -62,12 +62,7 @@ struct GraphicsHooks {
 /// Loading screen bar in the Graphite colours.
 [[nodiscard]] const char* LoadingBarStyle();
 
-/// The Fritchii Discord server and the owner's donation page, opened in the browser.
-inline constexpr const char* DiscordInvite = "https://discord.gg/fritchii";
-inline constexpr const char* DonateLink = "https://paypal.me/frizti";
-void OpenDiscord();
-void OpenDonate();
-/// Help > Copy Data from Eden or Lichii (v5.8.1): asks, then restarts into the import.
+/// Help > Copy Data from Eden or Lichii: asks, then restarts into the import.
 void CopyDataFromOldFolder(QMainWindow& window);
 
 /// Settings backups in config/backups/<yyyy-MM-dd HHmmss>: qt-config.ini, frizti.ini and the

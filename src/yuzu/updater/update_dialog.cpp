@@ -45,8 +45,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t ExeName[] = L"lichii.exe";
-// Set for a restarted process to a note it shows once it is up, such as "v5 is installed".
+constexpr wchar_t ExeName[] = L"nomadchii.exe";
+// Set for a restarted process to a note it shows once it is up, such as "v1.0.0 is installed".
 constexpr char RestartNoteVariable[] = "LICHII_UPDATE_NOTE";
 
 // Read in PrepareLaunch, before a swap can rename the running exe into update-old.
@@ -87,7 +87,7 @@ std::string PathText(const fs::path& path) {
 
 QString FritchiiName(const QString& version) {
     return version.isEmpty() ? QCoreApplication::translate("UpdateDialog", "the previous version")
-                             : QStringLiteral("Fritchii v%1").arg(version);
+                             : QStringLiteral("Nomadchii v%1").arg(version);
 }
 
 std::string RunningVersionText() {
@@ -144,7 +144,7 @@ UpdateDialog::UpdateDialog(const Common::Net::Release& release,
         ui->version->setText(
             FritchiiUi::Enabled()
                 ? tr("%1 is ready").arg(QString::fromStdString(release.title))
-                : tr("%1 is available. You have Fritchii v%2.")
+                : tr("%1 is available. You have Nomadchii v%2.")
                       .arg(QString::fromStdString(release.title),
                            QString::fromStdString(RunningVersionText())));
         auto* install = ui->buttonBox->button(QDialogButtonBox::Yes);
@@ -315,7 +315,7 @@ void UpdateDialog::InstallInPlace() {
 
     const auto package = UpdateInstaller::FindPackageRoot(unpacked, ExeName);
     if (!package) {
-        fail(tr("The downloaded update does not contain lichii.exe."));
+        fail(tr("The downloaded update does not contain nomadchii.exe."));
         return;
     }
 
@@ -331,16 +331,16 @@ void UpdateDialog::InstallInPlace() {
         return;
     case UpdateInstaller::Outcome::Unchanged:
         LOG_ERROR(Frontend, "Could not install {}: {}", m_release.tag, ec.message());
-        fail(tr("Could not replace the files of this version (%1). Fritchii was not changed.")
+        fail(tr("Could not replace the files of this version (%1). Nomadchii was not changed.")
                  .arg(ErrorText(ec)));
         return;
     case UpdateInstaller::Outcome::Interrupted:
         LOG_CRITICAL(Frontend, "Installing {} failed and could not be undone: {}", m_release.tag,
                      ec.message());
         Notify(parentWidget(), QMessageBox::Critical, tr("Failed to install the update"),
-               tr("The update failed (%1) and some files could not be put back. Close Fritchii and "
+               tr("The update failed (%1) and some files could not be put back. Close Nomadchii and "
                   "start it again to restore the previous version. If it does not start, download "
-                  "the release again and unzip it over your Fritchii folder; your user data is not "
+                  "the release again and unzip it over your Nomadchii folder; your user data is not "
                   "affected.")
                    .arg(ErrorText(ec)));
         return;
@@ -366,7 +366,7 @@ bool UpdateDialog::DownloadTo(const QString& filename) {
     client->set_read_timeout(timeout_seconds);
     client->set_write_timeout(timeout_seconds);
     client->set_follow_location(true);
-    client->set_default_headers({{"User-Agent", "Lichii"}});
+    client->set_default_headers({{"User-Agent", "Nomadchii"}});
 
 #ifdef YUZU_BUNDLED_OPENSSL
     client->load_ca_cert_store(kCert, sizeof(kCert));

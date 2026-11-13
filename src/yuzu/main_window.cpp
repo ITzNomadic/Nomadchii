@@ -3903,7 +3903,7 @@ void MainWindow::OnConfigure() {
 
         if (!restore.isEmpty() && !FritchiiUi::RestoreSettingsFiles(restore)) {
             QMessageBox::warning(this, tr("Restore Settings"),
-                                 tr("Some settings could not be restored. Fritchii's defaults "
+                                 tr("Some settings could not be restored. Nomadchii's defaults "
                                     "fill the gaps."));
         }
         config = std::make_unique<QtConfig>();
@@ -5077,7 +5077,7 @@ void MainWindow::OnEmulatorUpdateAvailable() {
         QString text;
         switch (result.failure) {
         case UpdateChecker::Failure::RateLimited:
-            text = tr("Could not check for updates: GitHub rate limit reached. Fritchii will try "
+            text = tr("Could not check for updates: GitHub rate limit reached. Nomadchii will try "
                       "again at the next start.");
             break;
         case UpdateChecker::Failure::Http:
@@ -5144,7 +5144,7 @@ void MainWindow::ShowRestartNote() {
         QTimer::singleShot(1000, this, &MainWindow::ShowRestartNote);
         return;
     }
-    QMessageBox::information(this, tr("Fritchii"), restart_note);
+    QMessageBox::information(this, tr("Nomadchii"), restart_note);
 }
 
 void MainWindow::ShowUpdate(const UpdateChecker::CheckResult& result) {
@@ -5774,8 +5774,8 @@ bool MainWindow::ConfirmClose() {
         UISettings::values.confirm_before_stopping.GetValue() == ConfirmStop::Ask_Based_On_Game)
         return true;
 
-    const auto text = tr("Are you sure you want to close Lichii?");
-    return question(this, tr("Lichii"), text);
+    const auto text = tr("Are you sure you want to close Nomadchii?");
+    return question(this, tr("Nomadchii"), text);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
@@ -5881,7 +5881,7 @@ bool MainWindow::ConfirmChangeGame() {
 
     // Use custom question to link controller navigation
     return question(
-        this, tr("Lichii"),
+        this, tr("Nomadchii"),
         tr("Are you sure you want to stop the emulation? Any unsaved progress will be lost."),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
 }
@@ -5890,10 +5890,10 @@ bool MainWindow::ConfirmForceLockedExit() {
     if (QtCommon::emu_thread == nullptr)
         return true;
 
-    const auto text = tr("The currently running application has requested Lichii to not exit.\n\n"
+    const auto text = tr("The currently running application has requested Nomadchii to not exit.\n\n"
                          "Would you like to bypass this and exit anyway?");
 
-    return question(this, tr("Lichii"), text);
+    return question(this, tr("Nomadchii"), text);
 }
 
 void MainWindow::RequestGameExit() {

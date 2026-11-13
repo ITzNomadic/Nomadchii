@@ -2,9 +2,9 @@ name: build-check
 
 on:
   pull_request:
-    branches: [nx2]
+    branches: [main, nx2]
   push:
-    branches: [nx2]
+    branches: [main, nx2]
   workflow_dispatch:
 
 permissions:

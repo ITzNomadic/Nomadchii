@@ -24,7 +24,7 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     ui->setupUi(this);
     // Try and request the icon from Qt theme (Linux?)
-    const QIcon yuzu_logo = QIcon::fromTheme(QStringLiteral("io.github.zortos293.lichii"),
+    const QIcon yuzu_logo = QIcon::fromTheme(QStringLiteral("io.github.itznomadic.nomadchii"),
                                            QIcon(QStringLiteral(":/img/lichii.ico")));
     if (!yuzu_logo.isNull()) {
         ui->labelLogo->setPixmap(yuzu_logo.pixmap(200));
@@ -33,8 +33,8 @@ AboutDialog::AboutDialog(QWidget* parent)
         ui->labelBuildInfo->text().arg(QString::fromStdString(yuzu_build_version),
                                        QString::fromUtf8(Common::g_build_date).left(10)));
     if (FritchiiUi::Enabled()) {
-        setWindowTitle(tr("About Fritchii"));
-        ui->labelYuzu->setText(QStringLiteral("<span style='font-size:30px'>Fritchii</span>"));
+        setWindowTitle(tr("About Nomadchii"));
+        ui->labelYuzu->setText(QStringLiteral("<span style='font-size:30px'>Nomadchii</span>"));
     }
 }
 

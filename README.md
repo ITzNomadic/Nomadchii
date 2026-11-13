@@ -1,91 +1,62 @@
-<!--
-# SPDX-FileCopyrightText: Copyright 2025 Eden Emulator Project
-# SPDX-License-Identifier: GPL-3.0-or-later
+# Nomadchii
 
-# SPDX-FileCopyrightText: 2018 yuzu Emulator Project
-# SPDX-License-Identifier: GPL-2.0-or-later
--->
+Nomadchii is an experimental open-source Nintendo Switch / NX2 emulator fork focused on VRAM stability, low-overhead GPU command submission, and clean separation between universal engine improvements and optional per-hardware tuning presets.
 
-<p align="center">
-  <img src="dist/branding/lichii_icon_with_logo.png" alt="Lichii" width="600">
-</p>
+> **Legal Notice & Disclaimer:**  
+> Nomadchii **does not include games, ROMs, updates, DLC, cryptographic keys (`prod.keys` / `title.keys`), system firmware, or precompiled shader caches**. You must legally own and dump your own console system files and games. Piracy is neither supported nor endorsed.
 
-# Lichii
+---
 
-Lichii is an experimental, open-source Nintendo Switch and Switch 2 emulator written in C++. It builds on Eglantine, Eden, yuzu and Sudachi, preserving their contributions while developing this fork's game compatibility and renderer fixes.
+## Lineage & GPL Modification Notice
 
-This is an independent fork, not an official release of those upstream projects. Lichii is not affiliated with Nintendo.
+In accordance with **Section 5(a) of the GNU General Public License v3.0 (GPL-3.0-or-later)**:
 
-## Downloads and setup
+- **Notice of Modification (2026-11-13):** This repository is a modified derivative work ("**Nomadchii**") forked by ITzNomadic from **Fritchii** (`fritchii-v5.8.4`), which builds upon **Lichii**, **Eglantine**, **Eden**, **Sudachi**, and **yuzu**.
+- Changes applied on top of `fritchii-v5.8.4` rebrand the application (`nomadchii`, `%APPDATA%\nomadchii`), remove third-party Discord/donation/release links, generalize VRAM and query-cache performance improvements for all GPUs, and move hardware/display-specific overrides into optional [`presets/`](presets/README.md) files.
+- All original copyright headers, license texts ([LICENSE.txt](LICENSE.txt) and [LICENSES/](LICENSES)), and upstream attributions remain preserved.
 
-Published builds belong on this fork's [releases page](https://github.com/zortos293/Eglantine/releases). The repository still uses its historical Eglantine name; the desktop application is now Lichii.
+---
 
-On Windows, extract the entire build archive and run **lichii.exe**. Only use games and system files you have legally obtained. Games, keys and firmware are not included.
+## What Changed vs. Upstream (`fritchii-v5.8.4`)
 
-### Existing saves and settings
+### 1. General Engine Improvements (Included for Everyone)
+- **Hardware-Adaptive VRAM Texture Pooling (`vk_texture_cache`):** Automatically scales EXP42 pooled render-target byte and frame budgets by GPU VRAM (`256 / 768 MiB` & `90 frames` on `<= 8–9 GiB` GPUs; full `512 / 1536 MiB` & `180 frames` on `10+ GiB` GPUs), with optional `EDEN_NX2_IMAGE_POOL_MIB` and `EDEN_NX2_IMAGE_POOL_FRAMES` overrides.
+- **Texture Cache & LRU Safety (`lru_cache`, `texture_cache`):** Adds bounds/sentinel guards for unlinked `lru_index` handles, guards `NULL_IMAGE_ID` / `CORRUPT_ID` paths, and reclaims idle Vulkan staging/pooled memory cleanly on `OutOfMemory()` before retrying allocation.
+- **Dynamic 8 GiB Budget Thresholds (`texture_cache`, `buffer_cache`):** Tightens buffer GC thresholds under actual memory pressure on `<= 9 GiB` cards and raises the `6–10 GiB` texture critical threshold to reduce unnecessary ASTC re-eviction churn without affecting `10+ GiB` GPUs.
+- **Low-Overhead Front Command Batching (`EXP66` / `FrontWriteRun`):** Batches incrementing Maxwell3D register writes across the split GPU thread boundary in one call.
+- **Lock-Free Query Report Bloom Filter (`EXP65`):** Uses a bounded 2048-bit atomic page bloom filter in `QueryCacheBase::HasCachedReports` to avoid unnecessary `MacroDmaFlush` drains when no cached query reports exist in a memory range.
+- **Vulkan Pipeline Cache Retention (`vk_pipeline_cache`):** Ensures expired pipeline hashes are retained up to the configured eviction ceiling when saving pipelines across restarts.
 
-Fritchii keeps its own profile: `%APPDATA%\fritchii` on Windows, and the `fritchii` directories under `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME` and `$XDG_CACHE_HOME` on Linux and macOS. An existing portable `user/` directory still takes priority and is not imported or changed.
+### 2. PC / Hardware / Game-Specific Overrides (`presets/`)
+Instead of forcing 8 GB VRAM limits, Lossless Scaling frame-pacing anchors (`EDEN_NX2_VSYNC_HZ=1000`), or game-specific switches onto every user, those profiles live separately in editable files inside [`presets/`](presets/README.md):
+- `presets/8gb-vram.txt` — Conservative texture cache expected/critical MiB and EXP42 pool caps for 8 GB VRAM GPUs.
+- `presets/40fps-lossless-scaling.txt` — Present-timing anchor (`EDEN_NX2_VSYNC_HZ=1000`) for users capping frames at ~40 FPS with Lossless Scaling X2 (`67%` emulator speed limit).
+- `presets/oot-performance.txt` — Optional Switch 2 *Ocarina of Time* CPU/GPU/scheduler switch profile (`nx2_switches.txt` format).
 
-On the first launch Fritchii copies your newest existing profile (an earlier Fritchii or Eden in `%APPDATA%\eden`, Lichii 150+ in `%APPDATA%\lichii`, else yuzu, suyu, sudachi or citron) into its folder and shows what it copied. Settings, keys, mods and saves are copied; caches are not, so shaders are prepared again once. The old folder is never changed. If the emulator using it is still open, close it and start Fritchii again. An interrupted copy is put back and retried on the next launch.
+By default, Nomadchii ships only safe, general defaults in [`dist/nx2_switches.txt`](dist/nx2_switches.txt).
 
-## Compatibility and issue reports
+---
 
-Compatibility and performance vary by game, hardware and driver. Rendering errors, stutters and crashes remain possible. Passing automated tests does not establish that a game renders correctly, and this project makes no universal frame-rate guarantee.
+## Building from Source
 
-When [reporting an issue](https://github.com/zortos293/Eglantine/issues), include:
+See [docs/Build.md](docs/Build.md) for full Windows, Linux, and macOS dependencies and toolchains.
 
-- The exact build, game version, CPU, GPU and driver version.
-- Relevant settings and steps to reproduce the problem.
-- A screenshot and the log from the affected session, after checking it for personal information.
-
-Do not upload game files, keys, firmware or private account information.
-
-## Building and contributing
-
-See the [build guide](docs/Build.md), [user documentation](docs/user/README.md) and [coding guidelines](docs/Coding.md). Some inherited documentation and internal build target names still use upstream names. The GUI build target remains `yuzu`; its output is `lichii.exe` on Windows and `lichii` on other desktop platforms.
-
-Keep changes focused and distinguish code-level checks from actual gameplay testing.
-
-## Artwork
-Art created by YOB (yobslab)
-The supplied Lichii logo, icon and library artwork are in [dist/branding](dist/branding). Windows, Linux and macOS icon resources are generated from that artwork by [Generate-LichiiIcons.ps1](tools/Generate-LichiiIcons.ps1).
-
-## Support Lichii
-
-Lichii is free and stays free. If you want to help, you can donate in crypto. Donations help pay for the AI tools and build machines used to develop this open-source project faster.
-
-**Solana (SOL)**
-```text
-JepEjfyWjGjhJvHSrqj52KtLjcbbbmUh1iGqerYBF4w
+Example Windows MSVC + Ninja configure & build:
+```bat
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_QT=ON -DYUZU_TESTS=OFF
+cmake --build build --target yuzu
 ```
+The compiled GUI executable is output as `nomadchii.exe` (or `nomadchii` on Linux/macOS) alongside `nx2_switches.txt` and `presets/`.
 
-**Ethereum (ETH)**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
+---
 
-**Bitcoin (BTC)**
-```text
-bc1qcvxdpf4qvdhqp8ee4s355cjmxrzsphsdwpl8w4
-```
+## Credits and License
 
-**BNB Smart Chain (BNB)**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
+Nomadchii builds directly on the work of:
+- **[Fritchii](https://github.com/Frizti/Fritchii)** (Frizti)
+- **[Lichii](https://github.com/zortos293/Lichii)** (zortos293)
+- **[Eglantine](https://github.com/Djihads80/Eglantine)** (Camille LaVey)
+- **Eden**, **Sudachi**, and the **yuzu Emulator Project**
+- Application icon and Graphite UI art originally contributed upstream by **YOB (yobslab)** (see [dist/branding](dist/branding))
 
-**Polygon**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
-
-Send each coin on its matching network. Coins sent on the wrong network can't be recovered.
-
-> [!NOTE]
-> Donations are voluntary gifts and are non-refundable. A donation does not buy any product, service, perk, early access, exclusive build, priority support or say in the project. Every release stays free and public for everyone.
-
-## Credits and license
-
-Lichii inherits the work of the Eglantine, Eden, yuzu and Sudachi projects and their contributors, including Eglantine's original developer Camille LaVey. Original copyright notices and third-party licenses are retained.
-
-See [LICENSE.txt](LICENSE.txt) and the source files for applicable license terms.
+Licensed under **GPL-3.0-or-later** (with inherited components under **GPL-2.0-or-later**). See [LICENSE.txt](LICENSE.txt) and [LICENSES/](LICENSES).

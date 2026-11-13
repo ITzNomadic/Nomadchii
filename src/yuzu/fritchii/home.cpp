@@ -265,21 +265,9 @@ QWidget* Home::MakePage() {
     layout->setContentsMargins(56, 24, 56, 36);
     layout->setSpacing(0);
 
-    // Discord and Donate in plain sight at the top right, with their names (2026-11-10: the
-    // rail's bare icons were easy to miss).
     auto* links = new QHBoxLayout;
     links->setSpacing(10);
     links->addStretch(1);
-    const auto link = [this](const QString& icon, const QString& text, void (*open)()) {
-        auto* button = new QPushButton(Icon(icon, 18), text, page);
-        button->setObjectName(QStringLiteral("FritchiiLink"));
-        button->setIconSize(QSize(18, 18));
-        button->setCursor(Qt::PointingHandCursor);
-        button->setFocusPolicy(Qt::NoFocus);
-        connect(button, &QPushButton::clicked, this, [open] { open(); });
-        return button;
-    };
-    // v5.8.3: the Saves window (export, import, copy between Fritchii, Eden and Lichii).
     auto* saves = new QPushButton(Icon(QStringLiteral("list"), 18), tr("Saves"), page);
     saves->setObjectName(QStringLiteral("FritchiiLink"));
     saves->setIconSize(QSize(18, 18));
@@ -289,8 +277,6 @@ QWidget* Home::MakePage() {
         ShowSavesWindow(window, hooks.emulation_running);
     });
     links->addWidget(saves);
-    links->addWidget(link(QStringLiteral("community"), tr("Discord"), &OpenDiscord));
-    links->addWidget(link(QStringLiteral("heart"), tr("Donate"), &OpenDonate));
     layout->addLayout(links);
     layout->addSpacing(28);
 

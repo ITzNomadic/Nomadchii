@@ -8,9 +8,9 @@
 
 // yuzu data directories
 
-// Fritchii keeps its own profile (v5.8, the owner's call): imported from eden (Eden, Lichii
-// before build 150, earlier Fritchii) or lichii (Lichii 150+) on the first launch.
-#define EDEN_DIR "fritchii"
+// Nomadchii keeps its own isolated data folder (%APPDATA%\nomadchii or $XDG_DATA_HOME/nomadchii)
+// so existing Eden, Lichii, or Fritchii setups remain untouched unless explicitly imported.
+#define EDEN_DIR "nomadchii"
 #define EDEN_LEGACY_DIR "eden"
 #define LICHII_DIR "lichii"
 #define PORTABLE_DIR "user"

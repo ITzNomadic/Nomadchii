@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.itznomadic.nomadchii</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Nomadchii</name>
+  <summary>Experimental Nintendo Switch and Switch 2 emulator</summary>
+  <description>
+    <p>Nomadchii is an experimental open-source emulator fork based on Fritchii, Lichii, Eglantine, and Eden, with work inherited from yuzu and Sudachi. No games, keys, or firmware are included.</p>
+  </description>
+  <launchable type="desktop-id">io.github.itznomadic.nomadchii.desktop</launchable>
+  <provides><binary>nomadchii</binary></provides>
+  <categories><category>Game</category><category>Emulator</category></categories>
+  <url type="homepage">https://github.com/ITzNomadic/Nomadchii</url>
+  <url type="bugtracker">https://github.com/ITzNomadic/Nomadchii/issues</url>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer_name>Nomadchii contributors</developer_name>
+  <content_rating type="oars-1.0"/>
+</component>
